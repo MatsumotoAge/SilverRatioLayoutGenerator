@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVG/PNG選択可能な黄金比・白銀比レイアウトジェネレーター</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        #container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #2a2a2a;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        #layout {
+            width: 600px;
+            height: 371px;
+            background-color: #333333;
+            border: 1px solid #444444;
+            margin-bottom: 1rem;
+        }
+        #controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            width: 100%;
+        }
+        #ratioControls, #complexityControl, #marginControls, #canvasMode, #downloadFormat {
+            grid-column: span 2;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        button {
+            grid-column: span 1;
+            padding: 0.75rem 1rem;
+            font-size: 1rem;
+            cursor: pointer;
+            background-color: #4a4a4a;
+            color: #ffffff;
+            border: none;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #5a5a5a;
+        }
+        #complexitySlider {
+            width: 200px;
+            -webkit-appearance: none;
+            background: #4a4a4a;
+            outline: none;
+            border-radius: 4px;
+        }
+        #complexitySlider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #ffffff;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+        #complexitySlider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #ffffff;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+        label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+        input[type="radio"], input[type="checkbox"] {
+            margin-right: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <canvas id="layout"></canvas>
+        <div id="controls">
+            <div id="ratioControls">
+                <label>
+                    <input type="radio" name="ratio" id="goldenRatio" checked> 黄金比
+                </label>
+                <label>
+                    <input type="radio" name="ratio" id="silverRatio"> 白銀比
+                </label>
+            </div>
+            <div id="complexityControl">
+                <label for="complexitySlider">レイアウトの細かさ: </label>
+                <input type="range" id="complexitySlider" min="1" max="10" value="5">
+                <span id="complexityValue">5</span>
+            </div>
+            <div id="marginControls">
+                <label>
+                    <input type="checkbox" id="showInnerMargin" checked> 内容余白を表示
+                </label>
+                <label>
+                    <input type="checkbox" id="showCrosses"> 交差点に十字を表示
+                </label>
+            </div>
+            <div id="canvasMode">
+                <label>キャンバスモード: </label>
+                <label>
+                    <input type="radio" name="canvasMode" id="darkMode" checked> ダーク
+                </label>
+                <label>
+                    <input type="radio" name="canvasMode" id="lightMode"> ライト
+                </label>
+            </div>
+            <div id="downloadFormat">
+                <label>ダウンロード形式: </label>
+                <label>
+                    <input type="radio" name="downloadFormat" id="svgFormat" checked> SVG
+                </label>
+                <label>
+                    <input type="radio" name="downloadFormat" id="pngFormat"> PNG
+                </label>
+            </div>
+            <button onclick="generateLayout()">新しいレイアウトを生成</button>
+            <button onclick="downloadImage()">画像をダウンロード</button>
+        </div>
+    </div>
+
+    <script>
+        const goldenRatio = (1 + Math.sqrt(5)) / 2; // 約1.618
+        const silverRatio = Math.sqrt(2); // 約1.414
+        const baseWidth = 600;
+        const canvas = document.getElementById('layout');
+        const ctx = canvas.getContext('2d');
+        const complexitySlider = document.getElementById('complexitySlider');
+        const complexityValue = document.getElementById('complexityValue');
+        const showInnerMarginCheckbox = document.getElementById('showInnerMargin');
+        const showCrossesCheckbox = document.getElementById('showCrosses');
+        const darkModeRadio = document.getElementById('darkMode');
+        const lightModeRadio = document.getElementById('lightMode');
+        const svgFormatRadio = document.getElementById('svgFormat');
+        const pngFormatRadio = document.getElementById('pngFormat');
+
+        let intersections = [];
+        let layoutData = [];
+
+        function adjustLayoutSize() {
+            const useGolden = document.getElementById('goldenRatio').checked;
+            const ratio = useGolden ? goldenRatio : silverRatio;
+            canvas.width = baseWidth;
+            canvas.height = Math.round(baseWidth / ratio);
+            canvas.style.width = `${baseWidth}px`;
+            canvas.style.height = `${canvas.height}px`;
+        }
+
+        function generateLayout() {
+            adjustLayoutSize();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const isDarkMode = darkModeRadio.checked;
+            ctx.fillStyle = isDarkMode ? '#333333' : '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            const useGolden = document.getElementById('goldenRatio').checked;
+            const ratio = useGolden ? goldenRatio : silverRatio;
+            
+            intersections = [];
+            layoutData = [];
+            ctx.strokeStyle = isDarkMode ? '#ffffff' : '#000000';
+            ctx.lineWidth = 1.5;
+            const complexity = parseInt(complexitySlider.value);
+            splitBox(0, 0, canvas.width, canvas.height, complexity);
+
+            if (showCrossesCheckbox.checked) {
+                drawCrosses();
+            }
+        }
+
+        function splitBox(x, y, width, height, depth) {
+            if (depth <= 0 || width < 30 || height < 30) {
+                if (showInnerMarginCheckbox.checked) {
+                    drawGuideSquares(x, y, width, height);
+                }
+                return;
+            }
+
+            const useGolden = document.getElementById('goldenRatio').checked;
+            const baseRatio = useGolden ? goldenRatio : silverRatio;
+            const ratio = baseRatio * (0.95 + Math.random() * 0.1);
+            const isVertical = Math.random() < 0.5;
+            const splitFactor = 0.95 + Math.random() * 0.1;
+
+            if (isVertical) {
+                const h1 = (height / ratio) * splitFactor;
+                ctx.strokeRect(x, y, width, height);
+                layoutData.push({type: 'rect', x, y, width, height});
+                intersections.push({x: x, y: y + h1});
+                intersections.push({x: x + width, y: y + h1});
+                if (Math.random() < 0.8) splitBox(x, y, width, h1, depth - 1);
+                if (Math.random() < 0.8) splitBox(x, y + h1, width, height - h1, depth - 1);
+            } else {
+                const w1 = (width / ratio) * splitFactor;
+                ctx.strokeRect(x, y, width, height);
+                layoutData.push({type: 'rect', x, y, width, height});
+                intersections.push({x: x + w1, y: y});
+                intersections.push({x: x + w1, y: y + height});
+                if (Math.random() < 0.8) splitBox(x, y, w1, height, depth - 1);
+                if (Math.random() < 0.8) splitBox(x + w1, y, width - w1, height, depth - 1);
+            }
+
+            if (Math.random() < 0.1 && depth > 2) {
+                const midX = x + width / 2;
+                const midY = y + height / 2;
+                intersections.push({x: midX, y: midY});
+                splitBox(x, y, midX - x, midY - y, depth - 2);
+                splitBox(midX, y, x + width - midX, midY - y, depth - 2);
+                splitBox(x, midY, midX - x, y + height - midY, depth - 2);
+                splitBox(midX, midY, x + width - midX, y + height - midY, depth - 2);
+            }
+        }
+
+        function drawGuideSquares(x, y, width, height) {
+            const useGolden = document.getElementById('goldenRatio').checked;
+            const ratio = useGolden ? goldenRatio : silverRatio;
+            const isDarkMode = darkModeRadio.checked;
+            
+            const squareSize = Math.min(width, height) / (ratio * 2);
+            const margin = squareSize / 4;
+
+            ctx.fillStyle = isDarkMode ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.2)';
+            
+            const squares = [
+                {x: x + margin, y: y + margin},
+                {x: x + width - squareSize - margin, y: y + margin},
+                {x: x + margin, y: y + height - squareSize - margin},
+                {x: x + width - squareSize - margin, y: y + height - squareSize - margin}
+            ];
+
+            squares.forEach(square => {
+                ctx.fillRect(square.x, square.y, squareSize, squareSize);
+                layoutData.push({type: 'guide', x: square.x, y: square.y, width: squareSize, height: squareSize});
+            });
+        }
+
+        function drawCrosses() {
+            const isDarkMode = darkModeRadio.checked;
+            ctx.strokeStyle = isDarkMode ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0.5)';
+            ctx.lineWidth = 1;
+
+            const crossSize = 10;
+
+            intersections.forEach(point => {
+                ctx.beginPath();
+                ctx.moveTo(point.x - crossSize / 2, point.y);
+                ctx.lineTo(point.x + crossSize / 2, point.y);
+                ctx.moveTo(point.x, point.y - crossSize / 2);
+                ctx.lineTo(point.x, point.y + crossSize / 2);
+                ctx.stroke();
+                layoutData.push({type: 'cross', x: point.x, y: point.y, size: crossSize});
+            });
+        }
+
+        function downloadImage() {
+            if (svgFormatRadio.checked) {
+                downloadSVG();
+            } else {
+                downloadPNG();
+            }
+        }
+
+        function downloadSVG() {
+            const isDarkMode = darkModeRadio.checked;
+            const backgroundColor = isDarkMode ? '#333333' : '#ffffff';
+            const strokeColor = isDarkMode ? '#ffffff' : '#000000';
+            const guideColor = isDarkMode ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.2)';
+            const crossColor = isDarkMode ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0.5)';
+
+            let svgContent = `<svg width="${canvas.width}" height="${canvas.height}" xmlns="http://www.w3.org/2000/svg">`;
+            svgContent += `<rect width="100%" height="100%" fill="${backgroundColor}"/>`;
+
+            layoutData.forEach(item => {
+                if (item.type === 'rect') {
+                    svgContent += `<rect x="${item.x}" y="${item.y}" width="${item.width}" height="${item.height}" stroke="${strokeColor}" fill="none"/>`;
+                } else if (item.type === 'guide') {
+                    svgContent += `<rect x="${item.x}" y="${item.y}" width="${item.width}" height="${item.height}" fill="${guideColor}"/>`;
+                } else if (item.type === 'cross') {
+                    const halfSize = item.size / 2;
+                    svgContent += `<line x1="${item.x - halfSize}" y1="${item.y}" x2="${item.x + halfSize}" y2="${item.y}" stroke="${crossColor}"/>`;
+                    svgContent += `<line x1="${item.x}" y1="${item.y - halfSize}" x2="${item.x}" y2="${item.y + halfSize}" stroke="${crossColor}"/>`;
+                }
+            });
+
+            svgContent += '</svg>';
+
+            const blob = new Blob([svgContent], {type: 'image/svg+xml'});
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.download = 'layout.svg';
+            link.href = url;
+            link.click();
+        }
+
+        function downloadPNG() {
+            const link = document.createElement('a');
+            link.download = 'layout.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        }
+
+        // スライダーの値を表示
+        // スライダーの値を表示
+        complexitySlider.oninput = function() {
+            complexityValue.textContent = this.value;
+        }
+
+        // ラジオボタン、スライダー、チェックボックスの変更を監視
+        document.getElementById('goldenRatio').addEventListener('change', generateLayout);
+        document.getElementById('silverRatio').addEventListener('change', generateLayout);
+        complexitySlider.addEventListener('change', generateLayout);
+        showInnerMarginCheckbox.addEventListener('change', generateLayout);
+        showCrossesCheckbox.addEventListener('change', generateLayout);
+        darkModeRadio.addEventListener('change', generateLayout);
+        lightModeRadio.addEventListener('change', generateLayout);
+
+        // 初期レイアウトを生成
+        generateLayout();
+    </script>
+</body>
+</html>
