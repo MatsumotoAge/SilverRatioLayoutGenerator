@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>12カラムグリッドシステム</title>
+    <style>
+        :root {
+            --primary-color: #333;
+            --secondary-color: #f5f5f5;
+            --text-color: #333;
+            --border-color: #ddd;
+            --hover-color: #666;
+        }
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        header {
+            background-color: var(--secondary-color);
+            color: var(--text-color);
+            padding: 1rem;
+            text-align: center;
+            border-bottom: 1px solid var(--border-color);
+        }
+        h1 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+        main {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            padding: 1rem;
+        }
+        #controls {
+            background-color: var(--secondary-color);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        #canvas-container {
+            border: 1px solid var(--border-color);
+            flex-grow: 1;
+            overflow-y: auto;
+            position: relative;
+            border-radius: 8px;
+        }
+        #grid-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        label, input, select, button {
+            margin-right: 0.5rem;
+        }
+        input[type="number"], select {
+            width: 60px;
+            padding: 0.25rem;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+        }
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: var(--hover-color);
+        }
+        input[type="color"] {
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        a {
+            color: var(--text-color);
+            text-decoration: none;
+            border-bottom: 1px solid var(--text-color);
+            padding-bottom: 2px;
+            transition: border-color 0.3s;
+        }
+        a:hover {
+            border-bottom-color: var(--hover-color);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>
+            <a href="/index.html" target="_blank">白銀比分割レイアウター</a> 
+            <a href="/index-12cullom.html" target="_blank">12カラムグリッドシステム</a>
+        </h1>
+    </header>
+    <main>
+        <div id="controls">
+            <button id="add-row">行を追加</button>
+            <button id="remove-row">行を削除</button>
+            <input type="color" id="color-picker" value="#e0e0e0">
+            <label for="color-picker">グリッド色</label>
+            <input type="color" id="line-color-picker" value="#808080">
+            <label for="line-color-picker">ガター線色</label>
+            <label for="column-select">カラム数:</label>
+            <select id="column-select">
+                <option value="2">2</option>
+                <option value="4">4</option>
+                <option value="6">6</option>
+                <option value="8">8</option>
+                <option value="10">10</option>
+                <option value="12" selected>12</option>
+            </select>
+            <label for="content-width">コンテンツ幅:</label>
+            <input type="number" id="content-width" value="74" min="1">
+            <label for="gutter-width">ガター幅:</label>
+            <input type="number" id="gutter-width" value="32" min="1">
+            <button id="export-png">PNGでエクスポート</button>
+            <button id="export-svg">SVGでエクスポート</button>
+        </div>
+        <div id="canvas-container">
+            <canvas id="grid-canvas"></canvas>
+        </div>
+    </main>
+
+    <script>
+        const canvas = document.getElementById('grid-canvas');
+        const ctx = canvas.getContext('2d');
+        const addRowBtn = document.getElementById('add-row');
+        const removeRowBtn = document.getElementById('remove-row');
+        const colorPicker = document.getElementById('color-picker');
+        const lineColorPicker = document.getElementById('line-color-picker');
+        const columnSelect = document.getElementById('column-select');
+        const contentWidthInput = document.getElementById('content-width');
+        const gutterWidthInput = document.getElementById('gutter-width');
+        const exportPngBtn = document.getElementById('export-png');
+        const exportSvgBtn = document.getElementById('export-svg');
+        const canvasContainer = document.getElementById('canvas-container');
+
+        let rows = 1;
+        let columns = 12;
+        let contentWidth = 74;
+        let gutterWidth = 32;
+
+        function updateGridDimensions() {
+            columns = parseInt(columnSelect.value);
+            contentWidth = parseInt(contentWidthInput.value);
+            gutterWidth = parseInt(gutterWidthInput.value);
+            
+            const containerWidth = canvasContainer.clientWidth;
+            
+            const totalWidth = columns * contentWidth + (columns + 1) * gutterWidth;
+            const scale = Math.min(1, containerWidth / totalWidth);
+            
+            canvas.width = containerWidth;
+            canvas.height = rows * (contentWidth * scale + gutterWidth * scale) + gutterWidth * scale;
+            
+            canvasContainer.style.height = `${Math.min(canvas.height, window.innerHeight - 250)}px`;
+            
+            drawGrid(scale);
+        }
+
+        function drawGrid(scale) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const scaledContentWidth = contentWidth * scale;
+            const scaledGutterWidth = gutterWidth * scale;
+            const totalWidth = columns * scaledContentWidth + (columns + 1) * scaledGutterWidth;
+            
+            const startX = (canvas.width - totalWidth) / 2;
+
+            // Draw content blocks
+            ctx.fillStyle = colorPicker.value;
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < columns; col++) {
+                    ctx.fillRect(
+                        startX + (col + 1) * scaledGutterWidth + col * scaledContentWidth,
+                        (row + 1) * scaledGutterWidth + row * scaledContentWidth,
+                        scaledContentWidth,
+                        scaledContentWidth
+                    );
+                }
+            }
+
+            // Draw gutter lines
+            ctx.strokeStyle = lineColorPicker.value;
+            ctx.lineWidth = 1;
+            for (let col = 0; col <= columns; col++) {
+                const x = startX + col * (scaledContentWidth + scaledGutterWidth) + scaledGutterWidth / 2;
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            for (let row = 0; row <= rows; row++) {
+                const y = row * (scaledContentWidth + scaledGutterWidth) + scaledGutterWidth / 2;
+                ctx.beginPath();
+                ctx.moveTo(startX, y);
+                ctx.lineTo(startX + totalWidth, y);
+                ctx.stroke();
+            }
+        }
+
+        function addRow() {
+            rows++;
+            updateGridDimensions();
+        }
+
+        function removeRow() {
+            if (rows > 1) {
+                rows--;
+                updateGridDimensions();
+            }
+        }
+
+        function exportPNG() {
+            const dataUrl = canvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.download = 'grid-system.png';
+            link.href = dataUrl;
+            link.click();
+        }
+
+        function exportSVG() {
+            const svgNS = "http://www.w3.org/2000/svg";
+            const svg = document.createElementNS(svgNS, "svg");
+            svg.setAttribute("width", canvas.width);
+            svg.setAttribute("height", canvas.height);
+
+            const scale = Math.min(1, canvas.width / (columns * contentWidth + (columns + 1) * gutterWidth));
+            const scaledContentWidth = contentWidth * scale;
+            const scaledGutterWidth = gutterWidth * scale;
+            const totalWidth = columns * scaledContentWidth + (columns + 1) * scaledGutterWidth;
+            
+            const startX = (canvas.width - totalWidth) / 2;
+
+            // Create content blocks
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < columns; col++) {
+                    const rect = document.createElementNS(svgNS, "rect");
+                    rect.setAttribute("x", startX + (col + 1) * scaledGutterWidth + col * scaledContentWidth);
+                    rect.setAttribute("y", (row + 1) * scaledGutterWidth + row * scaledContentWidth);
+                    rect.setAttribute("width", scaledContentWidth);
+                    rect.setAttribute("height", scaledContentWidth);
+                    rect.setAttribute("fill", colorPicker.value);
+                    svg.appendChild(rect);
+                }
+            }
+
+            // Create gutter lines
+            for (let col = 0; col <= columns; col++) {
+                const x = startX + col * (scaledContentWidth + scaledGutterWidth) + scaledGutterWidth / 2;
+                const line = document.createElementNS(svgNS, "line");
+                line.setAttribute("x1", x);
+                line.setAttribute("y1", 0);
+                line.setAttribute("x2", x);
+                line.setAttribute("y2", canvas.height);
+                line.setAttribute("stroke", lineColorPicker.value);
+                line.setAttribute("stroke-width", "1");
+                svg.appendChild(line);
+            }
+            for (let row = 0; row <= rows; row++) {
+                const y = row * (scaledContentWidth + scaledGutterWidth) + scaledGutterWidth / 2;
+                const line = document.createElementNS(svgNS, "line");
+                line.setAttribute("x1", startX);
+                line.setAttribute("y1", y);
+                line.setAttribute("x2", startX + totalWidth);
+                line.setAttribute("y2", y);
+                line.setAttribute("stroke", lineColorPicker.value);
+                line.setAttribute("stroke-width", "1");
+                svg.appendChild(line);
+            }
+
+            const svgData = new XMLSerializer().serializeToString(svg);
+            const svgBlob = new Blob([svgData], {type: "image/svg+xml;charset=utf-8"});
+            const svgUrl = URL.createObjectURL(svgBlob);
+            const downloadLink = document.createElement("a");
+            downloadLink.href = svgUrl;
+            downloadLink.download = "grid-system.svg";
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+        }
+
+        addRowBtn.addEventListener('click', addRow);
+        removeRowBtn.addEventListener('click', removeRow);
+        colorPicker.addEventListener('input', updateGridDimensions);
+        lineColorPicker.addEventListener('input', updateGridDimensions);
+        columnSelect.addEventListener('change', updateGridDimensions);
+        contentWidthInput.addEventListener('input', updateGridDimensions);
+        gutterWidthInput.addEventListener('input', updateGridDimensions);
+        exportPngBtn.addEventListener('click', exportPNG);
+        exportSvgBtn.addEventListener('click', exportSVG);
+
+        window.addEventListener('resize', updateGridDimensions);
+        updateGridDimensions();
+    </script>
+</body>
+</html>
