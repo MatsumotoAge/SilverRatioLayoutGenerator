@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>余白パターン生成</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css">
+    <style>
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f4f4;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2rem;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            letter-spacing: -0.5px;
+            width: 100%;
+        }
+
+        .controls {
+            flex: 1;
+            min-width: 250px;
+            max-width: 300px;
+            background-color: #fff;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .preview {
+            flex: 2;
+            min-width: 300px;
+        }
+
+        .control-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        input[type="file"],
+        input[type="number"],
+        input[type="range"],
+        select,
+        button {
+            width: 100%;
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        input[type="color"] {
+            width: 100%;
+            height: 40px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button {
+            background-color: #333;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            padding: 0.75rem;
+            font-size: 1rem;
+        }
+
+        button:hover {
+            background-color: #555;
+        }
+
+        canvas {
+            border: 1px solid #ccc;
+            max-width: 100%;
+            height: auto;
+            background-color: #fff;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        #debug {
+            margin-top: 1rem;
+            background-color: #eee;
+            padding: 1rem;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <h1>高度なグラフィックデザイン加工アプリ（拡張パターン生成機能付き）</h1>
+    <input type="file" id="imageUpload" accept="image/*">
+    <br>
+    <label for="bgColor">背景色: </label>
+    <input type="color" id="bgColor" value="#ffffff">
+    <br>
+    <label for="threshold">閾値 (0-255): </label>
+    <input type="number" id="threshold" value="30" min="0" max="255">
+    <br>
+    <label for="expansion">不可侵領域拡大 (px): </label>
+    <input type="number" id="expansion" value="5" min="0" max="50">
+    <br>
+    <label for="patternType">ジオメトリパターン: </label>
+    <select id="patternType">
+        <option value="basic">基本図形</option>
+        <option value="binaryTree">二分木</option>
+        <option value="voronoi">ボロノイ図</option>
+        <option value="spirals">螺旋</option>
+        <option value="hexagons">六角形</option>
+        <option value="dotMatrix">ドットマトリックス</option>
+    </select>
+    <br>
+    <label for="patternSize">パターンサイズ: </label>
+    <input type="range" id="patternSize" min="10" max="100" value="20">
+    <span id="patternSizeValue">20</span>
+    <br>
+    <button id="processImage">画像を処理</button>
+    <button id="downloadSVG">SVGをダウンロード</button>
+    <br>
+    <canvas id="canvas"></canvas>
+    <div id="debug"></div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const imageUpload = document.getElementById('imageUpload');
+        const bgColorPicker = document.getElementById('bgColor');
+        const thresholdInput = document.getElementById('threshold');
+        const expansionInput = document.getElementById('expansion');
+        const patternTypeSelect = document.getElementById('patternType');
+        const patternSizeInput = document.getElementById('patternSize');
+        const patternSizeValue = document.getElementById('patternSizeValue');
+        const processButton = document.getElementById('processImage');
+        const downloadSVGButton = document.getElementById('downloadSVG');
+        const debugDiv = document.getElementById('debug');
+
+        let image = new Image();
+        let mask;
+        let svgContent = '';
+
+        function debugLog(message) {
+            console.log(message);
+            debugDiv.innerHTML += message + '<br>';
+        }
+
+        imageUpload.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    image = new Image();
+                    image.onload = function() {
+                        canvas.width = image.width;
+                        canvas.height = image.height;
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(image, 0, 0);
+                        debugLog('画像がロードされました。サイズ: ' + image.width + 'x' + image.height);
+                    }
+                    image.onerror = function() {
+                        debugLog('画像の読み込みに失敗しました。');
+                    }
+                    image.src = event.target.result;
+                }
+                reader.readAsDataURL(file);
+            } else {
+                debugLog('ファイルが選択されていません。');
+            }
+        });
+
+        patternSizeInput.addEventListener('input', function() {
+            patternSizeValue.textContent = this.value;
+        });
+
+        processButton.addEventListener('click', processImage);
+        downloadSVGButton.addEventListener('click', downloadSVG);
+
+        function createMask() {
+            debugLog('マスク作成開始');
+            mask = new ImageData(canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const threshold = parseInt(thresholdInput.value);
+            const expansion = parseInt(expansionInput.value);
+            const bgColor = hexToRgb(bgColorPicker.value);
+            debugLog('背景色: ' + JSON.stringify(bgColor) + ', 閾値: ' + threshold + ', 拡大: ' + expansion);
+
+            let maskedPixels = 0;
+            for (let y = 0; y < canvas.height; y++) {
+                for (let x = 0; x < canvas.width; x++) {
+                    const idx = (y * canvas.width + x) * 4;
+                    const pixelColor = {
+                        r: imageData.data[idx],
+                        g: imageData.data[idx + 1],
+                        b: imageData.data[idx + 2]
+                    };
+
+                    if (colorDistance(bgColor, pixelColor) > threshold) {
+                        for (let dy = -expansion; dy <= expansion; dy++) {
+                            for (let dx = -expansion; dx <= expansion; dx++) {
+                                const expIdx = ((y + dy) * canvas.width + (x + dx)) * 4;
+                                if (expIdx >= 0 && expIdx < mask.data.length) {
+                                    mask.data[expIdx] = 255;
+                                    mask.data[expIdx + 1] = 255;
+                                    mask.data[expIdx + 2] = 255;
+                                    mask.data[expIdx + 3] = 255;
+                                    maskedPixels++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            debugLog('マスク作成完了。マスクされたピクセル: ' + maskedPixels);
+        }
+
+        function processImage() {
+            debugDiv.innerHTML = '';
+            debugLog('画像処理開始');
+            if (!image.src) {
+                alert('画像をアップロードしてください。');
+                return;
+            }
+
+            createMask();
+
+            // 背景色を適用し、前の模様を消去
+            ctx.fillStyle = bgColorPicker.value;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            debugLog('背景色適用完了');
+
+            // 画像を描画
+            ctx.drawImage(image, 0, 0);
+            debugLog('画像描画完了');
+
+            // 新しい模様を生成
+            drawGeometricPattern();
+            debugLog('画像処理完了');
+        }
+
+        function drawGeometricPattern() {
+            debugLog('ジオメトリカルパターン描画開始');
+            svgContent = `<svg width="${canvas.width}" height="${canvas.height}" xmlns="http://www.w3.org/2000/svg">`;
+            
+            const patternType = patternTypeSelect.value;
+            const patternSize = parseInt(patternSizeInput.value);
+
+            switch (patternType) {
+                case 'basic':
+                    drawBasicPattern(patternSize);
+                    break;
+                case 'binaryTree':
+                    drawBinaryTreePattern(patternSize);
+                    break;
+                case 'voronoi':
+                    drawVoronoiPattern(patternSize);
+                    break;
+                case 'spirals':
+                    drawSpiralsPattern(patternSize);
+                    break;
+                case 'hexagons':
+                    drawHexagonsPattern(patternSize);
+                    break;
+                case 'dotMatrix':
+                    drawDotMatrixPattern(patternSize);
+                    break;
+            }
+
+            svgContent += '</svg>';
+            debugLog('ジオメトリカルパターン描画完了');
+        }
+
+        function drawBasicPattern(patternSize) {
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.lineWidth = 1;
+
+            let patternsDrawn = 0;
+            for (let y = 0; y < canvas.height; y += patternSize) {
+                for (let x = 0; x < canvas.width; x += patternSize) {
+                    if (!isAreaMasked(x, y, patternSize)) {
+                        const pattern = Math.floor(Math.random() * 4);
+                        switch (pattern) {
+                            case 0: // 十字
+                                ctx.beginPath();
+                                ctx.moveTo(x + patternSize / 2, y);
+                                ctx.lineTo(x + patternSize / 2, y + patternSize);
+                                ctx.moveTo(x, y + patternSize / 2);
+                                ctx.lineTo(x + patternSize, y + patternSize / 2);
+                                ctx.stroke();
+                                svgContent += `<path d="M${x + patternSize / 2} ${y} V${y + patternSize} M${x} ${y + patternSize / 2} H${x + patternSize}" stroke="black" stroke-opacity="0.1" fill="none" />`;
+                                break;
+                            case 1: // 円
+                                ctx.beginPath();
+                                ctx.arc(x + patternSize / 2, y + patternSize / 2, patternSize / 3, 0, Math.PI * 2);
+                                ctx.stroke();
+                                svgContent += `<circle cx="${x + patternSize / 2}" cy="${y + patternSize / 2}" r="${patternSize / 3}" stroke="black" stroke-opacity="0.1" fill="none" />`;
+                                break;
+                            case 2: // 三角形
+                                ctx.beginPath();
+                                ctx.moveTo(x, y + patternSize);
+                                ctx.lineTo(x + patternSize / 2, y);
+                                ctx.lineTo(x + patternSize, y + patternSize);
+                                ctx.closePath();
+                                ctx.stroke();
+                                svgContent += `<polygon points="${x},${y + patternSize} ${x + patternSize / 2},${y} ${x + patternSize},${y + patternSize}" stroke="black" stroke-opacity="0.1" fill="none" />`;
+                                break;
+                            case 3: // 四角形
+                                ctx.strokeRect(x, y, patternSize, patternSize);
+                                svgContent += `<rect x="${x}" y="${y}" width="${patternSize}" height="${patternSize}" stroke="black" stroke-opacity="0.1" fill="none" />`;
+                                break;
+                        }
+                        patternsDrawn++;
+                    }
+                }
+            }
+            debugLog('基本パターン描画完了。描画されたパターン数: ' + patternsDrawn);
+        }
+
+        function drawBinaryTreePattern(patternSize) {
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.lineWidth = 1;
+
+            let treesDrawn = 0;
+            for (let y = 0; y < canvas.height; y += patternSize * 2) {
+                for (let x = 0; x < canvas.width; x += patternSize * 2) {
+                    if (!isAreaMasked(x, y, patternSize * 2)) {
+                        drawBranch(x + patternSize, y + patternSize * 2, -Math.PI / 2, 5, patternSize);
+                        treesDrawn++;
+                    }
+                }
+            }
+            debugLog('二分木パターン描画完了。描画された木の数: ' + treesDrawn);
+        }
+
+        function drawBranch(x, y, angle, depth, length) {
+            if (depth === 0) return;
+
+            const endX = x + length * Math.cos(angle);
+            const endY = y + length * Math.sin(angle);
+
+            if (!isAreaMasked(x, y, 1) && !isAreaMasked(endX, endY, 1)) {
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(endX, endY);
+                ctx.stroke();
+
+                svgContent += `<line x1="${x}" y1="${y}" x2="${endX}" y2="${endY}" stroke="black" stroke-opacity="0.1" />`;
+            }
+
+            drawBranch(endX, endY, angle - Math.PI / 4, depth - 1, length * 0.7);
+            drawBranch(endX, endY, angle + Math.PI / 4, depth - 1, length * 0.7);
+        }
+
+        function drawVoronoiPattern(patternSize) {
+            const points = [];
+
+            for (let y = 0; y < canvas.height; y += patternSize) {
+                for (let x = 0; x < canvas.width; x += patternSize) {
+                    if (!isAreaMasked(x, y, patternSize)) {
+                        points.push({
+                            x: x + Math.random() * patternSize,
+                            y: y + Math.random() * patternSize
+                        });
+                    }
+                }
+            }
+
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+
+            for (let y = 0; y < canvas.height; y++) {
+                for (let x = 0; x < canvas.width; x++) {
+                    if (!isAreaMasked(x, y, 1)) {
+                        let minDist = Infinity;
+                        let closestPoint;
+
+                        for (let point of points) {
+                            const dist = Math.sqrt((x - point.x) ** 2 + (y - point.y) ** 2);
+                            if (dist < minDist) {
+                                minDist = dist;
+                                closestPoint = point;
+                            }
+                        }
+
+                        if (closestPoint) {
+                            
+                            ctx.beginPath();
+                            ctx.moveTo(x, y);
+                            ctx.lineTo(closestPoint.x, closestPoint.y);
+                            ctx.stroke();
+                        }
+                    }
+                }
+            }
+
+            for (let point of points) {
+                svgContent += `<circle cx="${point.x}" cy="${point.y}" r="2" fill="black" fill-opacity="0.1" />`;
+            }
+
+            debugLog('ボロノイパターン描画完了。生成されたポイント数: ' + points.length);
+        }
+
+        function drawSpiralsPattern(patternSize) {
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.lineWidth = 1;
+
+            let spiralsDrawn = 0;
+            for (let y = 0; y < canvas.height; y += patternSize * 2) {
+                for (let x = 0; x < canvas.width; x += patternSize * 2) {
+                    if (!isAreaMasked(x, y, patternSize * 2)) {
+                        drawSpiral(x + patternSize, y + patternSize, patternSize);
+                        spiralsDrawn++;
+                    }
+                }
+            }
+            debugLog('螺旋パターン描画完了。描画された螺旋の数: ' + spiralsDrawn);
+        }
+
+        function drawSpiral(centerX, centerY, size) {
+            let angle = 0;
+            let radius = 0;
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            svgContent += `<path d="M${centerX} ${centerY}`;
+
+            while (radius < size) {
+                angle += 0.2;
+                radius += 0.2;
+                const x = centerX + radius * Math.cos(angle);
+                const y = centerY + radius * Math.sin(angle);
+                ctx.lineTo(x, y);
+                svgContent += ` L${x} ${y}`;
+            }
+
+            ctx.stroke();
+            svgContent += `" stroke="black" stroke-opacity="0.1" fill="none" />`;
+        }
+
+        function drawHexagonsPattern(patternSize) {
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.lineWidth = 1;
+
+            const hexHeight = patternSize * Math.sqrt(3);
+            let hexagonsDrawn = 0;
+
+            for (let y = 0; y < canvas.height + hexHeight; y += hexHeight * 3/4) {
+                for (let x = 0; x < canvas.width + patternSize; x += patternSize * 1.5) {
+                    if (!isAreaMasked(x, y, patternSize)) {
+                        drawHexagon(x, y, patternSize / 2);
+                        hexagonsDrawn++;
+                    }
+                }
+            }
+            debugLog('六角形パターン描画完了。描画された六角形の数: ' + hexagonsDrawn);
+        }
+
+        function drawHexagon(centerX, centerY, size) {
+            ctx.beginPath();
+            svgContent += `<polygon points="`;
+            for (let i = 0; i < 6; i++) {
+                const angle = 2 * Math.PI / 6 * i;
+                const x = centerX + size * Math.cos(angle);
+                const y = centerY + size * Math.sin(angle);
+                ctx.lineTo(x, y);
+                svgContent += `${x},${y} `;
+            }
+            ctx.closePath();
+            ctx.stroke();
+            svgContent += `" stroke="black" stroke-opacity="0.1" fill="none" />`;
+        }
+
+        function drawDotMatrixPattern(patternSize) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+
+            let dotsDrawn = 0;
+            for (let y = 0; y < canvas.height; y += patternSize / 2) {
+                for (let x = 0; x < canvas.width; x += patternSize / 2) {
+                    if (!isAreaMasked(x, y, patternSize / 4)) {
+                        const radius = Math.random() * patternSize / 8 + patternSize / 16;
+                        ctx.beginPath();
+                        ctx.arc(x, y, radius, 0, Math.PI * 2);
+                        ctx.fill();
+                        svgContent += `<circle cx="${x}" cy="${y}" r="${radius}" fill="black" fill-opacity="0.1" />`;
+                        dotsDrawn++;
+                    }
+                }
+            }
+            debugLog('ドットマトリックスパターン描画完了。描画されたドットの数: ' + dotsDrawn);
+        }
+
+        function isAreaMasked(x, y, size) {
+            for (let dy = 0; dy < size; dy++) {
+                for (let dx = 0; dx < size; dx++) {
+                    const idx = ((y + dy) * canvas.width + (x + dx)) * 4;
+                    if (idx >= 0 && idx < mask.data.length && mask.data[idx + 3] === 255) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : null;
+        }
+
+        function colorDistance(color1, color2) {
+            return Math.sqrt(
+                Math.pow(color1.r - color2.r, 2) +
+                Math.pow(color1.g - color2.g, 2) +
+                Math.pow(color1.b - color2.b, 2)
+            );
+        }
+
+        function downloadSVG() {
+            const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'geometric_pattern.svg';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // 初期化時にデバッグ情報を表示
+        debugLog('アプリケーションが初期化されました。画像をアップロードしてください。');
+    </script>
+</body>
+</html>
